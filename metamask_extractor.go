@@ -6,43 +6,99 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
-// program to extract metamask hash from .ldb file
-// ldb files can be found at ..Google\Chrome\User Data\Default\Local Extension Settings\nkbihfbeogaeaoehlefnkodbefgpgknn
-// https://support.metamask.io/hc/en-us/articles/360018766351-How-to-use-the-Vault-Decryptor-with-the-MetaMask-Vault-Data
-// inspiration from 'extract-metamask-vaults.py' and my own shell commands for extracting metamask hashes
-// coded by cyclone in Go
+/*
+Cyclone's Metamask Vault Hash Extractor
+Tool to extract metamask vault data & hashcat compatible hash from Metamask Vault
+https://github.com/cyclone-github/metamask_extractor
 
-// version 0.1.1; initial github release
+Metamask Vault location for Chrome extensions:
+Linux: /home/$USER/.config/google-chrome/Default/Local\ Extension\ Settings/nkbihfbeogaeaoehlefnkodbefgpgknn/
+Mac: Library>Application Support>Google>Chrome>Default>Local Extension Settings>nkbihfbeogaeaoehlefnkodbefgpgknn
+Windows: C:\Users\$USER\AppData\Local\Google\Chrome\User Data\Default\Local Extension Settings\nkbihfbeogaeaoehlefnkodbefgpgknn
 
+Credits:
+https://support.metamask.io/hc/en-us/articles/360018766351-How-to-use-the-Vault-Decryptor-with-the-MetaMask-Vault-Data
+https://btcrecover.readthedocs.io/en/latest/Extract_Scripts/#usage-for-metamask
+My own methods for extracting metamask hashes and JSON data
+coded by cyclone in Go
+
+GNU General Public License v2.0
+https://github.com/cyclone-github/metamask_extractor/blob/main/LICENSE
+
+version history
+v0.1.1; initial github release
+v0.2.0-2024-03-01
+	fixed https://github.com/cyclone-github/metamask_extractor/issues/1	
+	added support for new vault format with dynamic iterations
+	dropped "-input" flag
+	updated code and printouts
+*/
+
+// clear screen func
+func clearScreen() {
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		cmd := exec.Command("clear")
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+	case "windows":
+		cmd := exec.Command("cmd", "/c", "cls")
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+	}
+}
+
+// version func
 func printVersion() {
-	fmt.Println("Program version: 0.1.1")
+	fmt.Fprintln(os.Stderr, "Cyclone's Metamask Vault Extractor v0.2.0-2024-03-01\nhttps://github.com/cyclone-github/metamask_extractor\n")
 }
 
-func printCyclone() {
-	encoded := "Q29kZWQgYnkgQ3ljbG9uZSA6KQ=="
-	decoded, _ := base64.StdEncoding.DecodeString(encoded)
-	fmt.Println(string(decoded))
-}
-
+// help func
 func printHelp() {
-	fmt.Println("Usage: metamask_extractor [-version] [-help] [-input <ldb file or directory containing ldb files>]")
+	printVersion()
+	str := `Supports both old and new Metamask vaults with or without 'KeyMetadata'
+
+Example vaults supported:
+	- Old vault format: {"data": "","iv": "","salt": ""}
+	- New vault format: {"data": "","iv": "","keyMetadata": {"algorithm": "PBKDF2","params": {"iterations": }},"salt": ""}
+
+Example Usage:
+./metamask_extractor.bin [-version] [-help] [metamask_vault_dir]
+./metamask_extractor.bin nkbihfbeogaeaoehlefnkodbefgpgknn/`
+	fmt.Fprintln(os.Stderr, str)
 }
 
+// metamask vault json struct (support OLD and NEW vaults)
+type Hash struct {
+	Salt        string `json:"salt"`
+	Iv          string `json:"iv"`
+	VaultData   string `json:"data"`
+	KeyMetadata *struct {
+		Algorithm string `json:"algorithm"`
+		Params    struct {
+			Iterations int `json:"iterations"`
+		} `json:"params"`
+	} `json:"keyMetadata,omitempty"`
+}
+
+// main func
 func main() {
 	versionFlag := flag.Bool("version", false, "Print program version")
 	cycloneFlag := flag.Bool("cyclone", false, "")
 	helpFlag := flag.Bool("help", false, "Print usage information")
-	inputFlag := flag.String("input", "", "ldb file or directory containing ldb files")
-
 	flag.Parse()
+
+	clearScreen()
 
 	if *versionFlag {
 		printVersion()
@@ -50,8 +106,10 @@ func main() {
 	}
 
 	if *cycloneFlag {
-		printCyclone()
-		return
+		line := "Q29kZWQgYnkgY3ljbG9uZSA7KQo="
+		str, _ := base64.StdEncoding.DecodeString(line)
+		fmt.Println(string(str))
+		os.Exit(0)
 	}
 
 	if *helpFlag {
@@ -59,24 +117,48 @@ func main() {
 		return
 	}
 
-	if *inputFlag == "" {
-		fmt.Fprintln(os.Stderr, "Error: -input flag is required")
+	ldbDir := flag.Arg(0)
+
+	// sanity check: make sure metamask vault dir is provided in CLI arg
+	if ldbDir == "" {
+		fmt.Fprintln(os.Stderr, "Error: MetaMask vault directory is required")
 		printHelp()
-		os.Exit(0)
+		os.Exit(1)
 	}
 
-	ldbFile := *inputFlag
-	ldbDir := filepath.Dir(ldbFile)
+	info, err := os.Stat(ldbDir)
+	if os.IsNotExist(err) || !info.IsDir() {
+		fmt.Fprintln(os.Stderr, "Error: Provided path does not exist or is not a directory")
+		os.Exit(1)
+	}
 
+	// check if dir contains any .ldb files
+	files, err := ioutil.ReadDir(ldbDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read the directory: %v\n", err)
+		os.Exit(1)
+	}
+	ldbFileFound := false
+	for _, file := range files {
+		if strings.HasSuffix(file.Name(), ".ldb") {
+			ldbFileFound = true
+			break
+		}
+	}
+	if !ldbFileFound {
+		fmt.Fprintln(os.Stderr, "Error: No .ldb files found in the provided directory. Please ensure you've specified the correct MetaMask vault directory.")
+		os.Exit(1)
+	}
+
+	// open LevelDB database
 	db, err := leveldb.OpenFile(ldbDir, &opt.Options{})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open ldb file:", err)
-		os.Exit(0)
+		fmt.Fprintln(os.Stderr, "Failed to open Vault:", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	var currentData bool
-	var data json.RawMessage
 
 	iter := db.NewIterator(nil, nil)
 	defer iter.Release()
@@ -85,50 +167,75 @@ func main() {
 		value := iter.Value()
 
 		if bytes.Contains(key, []byte("data")) {
-			if err := json.Unmarshal(value, &data); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to unmarshal json record value: %v\n", err)
-				continue
-			}
-
-			dataStr := string(data)
-			dataStr = strings.ReplaceAll(dataStr, "\\", "")
+			dataStr := strings.ReplaceAll(string(value), "\\", "")
 			if strings.Contains(dataStr, "salt") {
 				if currentData {
 					fmt.Println()
 				} else {
 					currentData = true
-					fmt.Println("===== Current Vault Data =====")
-				}
-				walletStartText := "vault"
-				walletDataStart := strings.Index(strings.ToLower(dataStr), walletStartText)
-				walletDataTrimmed := dataStr[walletDataStart:]
-				walletDataStart = strings.Index(walletDataTrimmed, "data")
-				walletDataTrimmed = walletDataTrimmed[walletDataStart-2:]
-				walletDataEnd := strings.Index(walletDataTrimmed, "}")
-				walletData := walletDataTrimmed[:walletDataEnd+1]
-				fmt.Println(walletData)
-
-				// Extract salt, IV, and data values from json
-				type Hash struct {
-					Salt      string `json:"salt"`
-					Iv        string `json:"iv"`
-					VaultData string `json:"data"`
+					fmt.Println(" ----------------------------------------------------- ")
+					fmt.Println("|        Cyclone's Metamask Vault Hash Extractor       |")
+					fmt.Println("|  Use Metamask Vault Decryptor to decrypt JSON below  |")
+					fmt.Println("| https://github.com/cyclone-github/metamask_decryptor |")
+					fmt.Println(" ----------------------------------------------------- ")
 				}
 
-				var h Hash
-				err = json.Unmarshal([]byte(walletData), &h)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to unmarshal salt, iv, and data values: %v\n", err)
+				jsonData, ok := extractJSONData(dataStr)
+				if !ok {
+					fmt.Fprintf(os.Stderr, "Failed to extract JSON data\n")
 					continue
 				}
 
-				// Print Metamask hash string
-				metamaskHash := fmt.Sprintf("$metamask$%s$%s$%s", h.Salt, h.Iv, h.VaultData)
-				fmt.Println("\n===== Metamask -m 26600 hash =====")
+				fmt.Println(jsonData) // print extracted JSON data
+
+				var h Hash
+				if err := json.Unmarshal([]byte(jsonData), &h); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to unmarshal JSON: %v\n", err)
+					continue
+				}
+
+				// print Metamask hash string based on format (OLD or NEW)
+				var metamaskHash string
+				if h.KeyMetadata != nil {
+					// NEW format with iteration count
+					// this may need updated once hashcat releases offical support for this new algo
+					metamaskHash = fmt.Sprintf("$metamask$%d$%s$%s$%s", h.KeyMetadata.Params.Iterations, h.Salt, h.Iv, h.VaultData)
+					fmt.Println(" -------------------------------------------------- ")
+					fmt.Println("|        hashcat -m 26620 hash (NEW format)        |")
+					fmt.Println("| See https://github.com/hashcat/hashcat/pull/3952 |")
+					fmt.Println(" -------------------------------------------------- ")
+				} else {
+					// OLD format without iteration count
+					metamaskHash = fmt.Sprintf("$metamask$%s$%s$%s", h.Salt, h.Iv, h.VaultData)
+					fmt.Println(" -------------------------------------------------- ")
+					fmt.Println("|        hashcat -m 26600 hash (OLD format)        |")
+					fmt.Println(" -------------------------------------------------- ")
+				}
 				fmt.Println(metamaskHash)
 			}
 		}
 	}
+}
+
+// json extractor helper function
+func extractJSONData(value string) (string, bool) {
+	dataStart := strings.Index(value, `{"data":"`)
+	if dataStart == -1 {
+		return "", false
+	}
+	braceCount := 1
+	for i := dataStart + len(`{"data":"`); i < len(value); i++ {
+		switch value[i] {
+		case '{':
+			braceCount++
+		case '}':
+			braceCount--
+			if braceCount == 0 {
+				return value[dataStart : i+1], true
+			}
+		}
+	}
+	return "", false
 }
 
 // end code
