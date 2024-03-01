@@ -2,7 +2,7 @@
 Tool to extract metamask vaults to JSON and hashcat compatible formats
 
 ### Info:
-- Metamask JSON vaults can be decrytped with https://github.com/cyclone-github/metamask_decryptor
+- Metamask JSON vaults can be decrypted with https://github.com/cyclone-github/metamask_decryptor
 - Previous Metamask vaults can be cracked using hashcat -m 26600
 - New Metamask vaults can be cracked using the upcoming hashcat -m 26620
   - https://github.com/hashcat/hashcat/pull/3952
