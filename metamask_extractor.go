@@ -38,10 +38,12 @@ https://github.com/cyclone-github/metamask_extractor/blob/main/LICENSE
 version history
 v0.1.1; initial github release
 v0.2.0-2024-03-01
-	fixed https://github.com/cyclone-github/metamask_extractor/issues/1	
+	fixed https://github.com/cyclone-github/metamask_extractor/issues/1
 	added support for new vault format with dynamic iterations
 	dropped "-input" flag
 	updated code and printouts
+v0.2.1-2024-03-02
+	updated URL for hashcat 26620 kernel
 */
 
 // clear screen func
@@ -60,7 +62,7 @@ func clearScreen() {
 
 // version func
 func printVersion() {
-	fmt.Fprintln(os.Stderr, "Cyclone's Metamask Vault Extractor v0.2.0-2024-03-01\nhttps://github.com/cyclone-github/metamask_extractor\n")
+	fmt.Fprintln(os.Stderr, "Cyclone's Metamask Vault Extractor v0.2.1-2024-03-01\nhttps://github.com/cyclone-github/metamask_extractor\n")
 }
 
 // help func
@@ -200,10 +202,10 @@ func main() {
 					// NEW format with iteration count
 					// this may need updated once hashcat releases offical support for this new algo
 					metamaskHash = fmt.Sprintf("$metamask$%d$%s$%s$%s", h.KeyMetadata.Params.Iterations, h.Salt, h.Iv, h.VaultData)
-					fmt.Println(" -------------------------------------------------- ")
-					fmt.Println("|        hashcat -m 26620 hash (NEW format)        |")
-					fmt.Println("| See https://github.com/hashcat/hashcat/pull/3952 |")
-					fmt.Println(" -------------------------------------------------- ")
+					fmt.Println(" -------------------------------------------------------- ")
+					fmt.Println("|           hashcat -m 26620 hash (NEW format)           |")
+					fmt.Println("| https://github.com/cyclone-github/hashcat_26620_kernel |")
+					fmt.Println(" -------------------------------------------------------- ")
 				} else {
 					// OLD format without iteration count
 					metamaskHash = fmt.Sprintf("$metamask$%s$%s$%s", h.Salt, h.Iv, h.VaultData)

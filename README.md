@@ -3,9 +3,9 @@ Tool to extract metamask vaults to JSON and hashcat compatible formats
 
 ### Info:
 - Metamask JSON vaults can be decrypted with https://github.com/cyclone-github/metamask_decryptor
-- Previous Metamask vaults can be cracked using hashcat -m 26600
-- New Metamask vaults can be cracked using the upcoming hashcat -m 26620
-  - https://github.com/hashcat/hashcat/pull/3952
+- Previous Metamask hashes can be cracked using hashcat -m 26600
+- New Metamask hashes can be cracked with hashcat using the custom -m 26620 kernel below
+  - https://github.com/cyclone-github/hashcat_26620_kernel
 
 ### Metamask Vault location for Chrome extensions:
 - Linux: `/home/$USER/.config/google-chrome/Default/Local\ Extension\ Settings/nkbihfbeogaeaoehlefnkodbefgpgknn/`
